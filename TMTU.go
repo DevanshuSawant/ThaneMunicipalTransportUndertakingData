@@ -6,9 +6,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
-	"net/url"
+	"time"
 	geojson "github.com/paulmach/go.geojson"
 )
 
@@ -68,6 +69,11 @@ type ResponseRouteNo struct {
 }
 
 func main() {
+	err := os.MkdirAll("output", 0750)
+		if err != nil && !os.IsExist(err) {
+			log.Fatal(err)
+		}
+	
 	waypoints()
 	routes()
 }
@@ -116,14 +122,15 @@ func waypoints() {
 
 	//Saves the geojson file for bus stops to the current directory
 	//fmt.Printf("%s", string(rawJSON))
-	err = os.WriteFile("TMTStops.json", rawJSON, 0644)
+	err = os.WriteFile("output/TMTStopsDirect.json", rawJSON, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func routes() {
-
+	var stops =make(map[int]string)
+	var ref[]int
 	respRoutes, err := http.Get("http://tmtitsapi.locationtracker.com/api/getRouteMaster") //GET request to TMTU for routes data
 	if err != nil {
 		log.Fatal(err)
@@ -137,41 +144,100 @@ func routes() {
 	if err := json.Unmarshal(bodyRoutes, &resultRoutes); err != nil { // Parse []byte to the go struct pointer
 		fmt.Println(err)
 	}
-
-	for i := 0; i < 158; i++ {
+	waypoints := geojson.NewFeatureCollection()
+	for i := 0; i < len(resultRoutes.Data); i++ {
 
 		data := url.Values{
-			"RouteNo":       {resultRoutes.Data[i].RouteNo},
+			"RouteNo":{resultRoutes.Data[i].RouteNo},
 		}
+		time.Sleep(2 * time.Second)
+		fmt.Println("Restarting..."  )
+		fmt.Println(i)
 		respRouteNo, err := http.PostForm("http://tmtitsapi.locationtracker.com/api/getRouteDetailsNew", data) //GET request to TMTU for routes data
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("hi")
 		}
 		defer respRouteNo.Body.Close()
 		bodyRouteNo, err := io.ReadAll(respRouteNo.Body) // response body is []byte
 		if err != nil {
-			fmt.Println("wrong here")
+			fmt.Println("wrong here2")
 		}
 		var resultRouteNo ResponseRouteNo
 		if err := json.Unmarshal(bodyRouteNo, &resultRouteNo); err != nil { // Parse []byte to the go struct pointer
-			fmt.Println(err)
+			fmt.Println("wrong here3")
 		}
-		fmt.Print(resultRouteNo)
+		//fmt.Print(resultRouteNo)
 		routes := geojson.NewFeatureCollection()
-		for j := 0; j < len(resultRouteNo.Data); j++ {
+		
+
+		for j := 0; j < len(resultRouteNo.Data[0].RouteDetails); j++ {
+
+			sWaypointNo, err := strconv.ParseInt(resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo , 10, 64)
+			if err != nil {
+				fmt.Println("wrong here15")
+			}
+			flag := 0
+			for k := 0; k < len(stops); k++ {
+				
+				if int64(ref[k])==sWaypointNo {
+					flag =1
+				}
+			}
+			if flag==0 {
+				ref = append(ref, int(sWaypointNo))
+			}
+			
 			sresultRouteNoLatitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Latitude, 64)
 			if err != nil {
-				fmt.Println("wrong here1")
+				fmt.Println("wrong here16")
 			}
 			sresultRouteNoLongitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Longitude, 64)
 			if err != nil {
 				fmt.Println("wrong here1")
 			}
-
-			feature := geojson.NewLineStringFeature([][]float64{sresultRouteNoLatitude, sresultRouteNoLongitude},)
-			feature.SetProperty("name", resultRouteNo.Data[i].RouteDetails[j].Waypoints.WpointName)
+			feature := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+			feature.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+			feature.SetProperty("ref", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo)
+			feature.SetProperty("position", j)
 			routes.AddFeature(feature)
+			
+			for k:=0; k<len(ref); k++{
+				if ref[k]== int(sWaypointNo) {	
+					stops[int(sWaypointNo)] = resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName
+					feature1 := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+					feature1.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+					feature1.SetProperty("ref", sWaypointNo)
+					feature1.SetProperty("highway", "bus_stop")
+					feature1.SetProperty("operator", "Thane Municipal Transport")
+					feature1.SetProperty("public_transport", "platform")
+					waypoints.AddFeature(feature1)
+				}
+			}
 		}
 		
+
+		rawJSON1, err := routes.MarshalJSON()
+		if err != nil {
+			fmt.Printf("error: %v", err)
+			return
+		}
+		
+		fn:= fmt.Sprintf("output/TMTRoutes%s-%s.json", resultRoutes.Data[i].RouteNo, resultRoutes.Data[i].RouteNum)
+		err = os.WriteFile(fn, rawJSON1, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
+	rawJSON, err := waypoints.MarshalJSON()
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		return
+		}
+
+		//Saves the geojson file for bus stops to the current directory
+		//fmt.Printf("%s", string(rawJSON))
+		err = os.WriteFile("output/TMTStopsThroughRoutes.json", rawJSON, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
 }
