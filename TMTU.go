@@ -171,30 +171,69 @@ type Location struct {
 }
 
 func main() {
+
+	fmt.Println("Choose Which Data you want to store (Choose'1','2','3') Default is '1' ")
+	fmt.Println("1. Bus Stops, Bus Routes, Bus Locations")
+	fmt.Println("2. Bus Stops, Bus Routes")
+	fmt.Println("3. Bus Locations")
+	chooser := 1
+	fmt.Scanf("%d", &chooser)
 	err := os.MkdirAll("output", 0750)
 	if err != nil && !os.IsExist(err) {
 		log.Fatal(err)
 	}
 
-	start := time.Now()
-	fmt.Println("Adding Bus Stops")
-	waypoints()
-	fmt.Printf("\nBus Stops Added in: %s\n", time.Since(start))
+	switch {
+	case chooser == 1:
+		start := time.Now()
+		fmt.Println("Adding Bus Stops")
+		waypoints()
+		fmt.Printf("\nBus Stops Added in: %s\n", time.Since(start))
 
-	start = time.Now()
-	fmt.Println("Adding Bus Routes")
-	routes()
-	fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
+	case chooser == 2:
+		start := time.Now()
+		fmt.Println("Adding Bus Stops")
+		waypoints()
+		fmt.Printf("\nBus Stops Added in: %s\n", time.Since(start))
 
-	start = time.Now()
-	fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
-	fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
-	fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
-	i := 1
-	for {
-		buslocations(i)
-		fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
-		i++
+		start = time.Now()
+		fmt.Println("Adding Bus Routes")
+		routes()
+		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
+
+	case chooser == 3:
+		start := time.Now()
+		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
+		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
+		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
+		i := 1
+		for {
+			buslocations(i)
+			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
+			i++
+		}
+
+	default:
+		start := time.Now()
+		fmt.Println("Adding Bus Stops")
+		waypoints()
+		fmt.Printf("\nBus Stops Added in: %s\n", time.Since(start))
+
+		start = time.Now()
+		fmt.Println("Adding Bus Routes")
+		routes()
+		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
+
+		start = time.Now()
+		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
+		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
+		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
+		i := 1
+		for {
+			buslocations(i)
+			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
+			i++
+		}
 	}
 }
 
