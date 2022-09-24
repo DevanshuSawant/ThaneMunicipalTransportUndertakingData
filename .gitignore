@@ -21,5 +21,5 @@
 # Go workspace file
 go.work
 
-# Firebase Admin SDK Service Account Key
-serviceAccount.json
+target
+output
