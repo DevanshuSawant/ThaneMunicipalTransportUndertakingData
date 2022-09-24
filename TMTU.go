@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -182,15 +181,12 @@ func main() {
 	routes()
 	start := time.Now()
 	fmt.Printf("Started At:%s\n", start.String())
-
-	for i := 0; i < 18000; i++ {
+	i := 1
+	for {
 		buslocations(i)
+		fmt.Printf("Running: %d(s) times,Time Since Start:%s", i, time.Since(start).String())
 		i++
 	}
-	fmt.Printf("Finished Recording In:%s", time.Since(start))
-
-	fmt.Println("Saving Recording And Parsing to MongoDB:")
-	mongoBusLocationSaver(1, 18056)
 }
 
 func waypoints() {
@@ -305,6 +301,21 @@ func routes() {
 
 func buslocations(i int) {
 
+	uri := "mongodb://localhost:27017" //monogodb Connection String
+	if uri == "" {
+		log.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
+	}
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
 	respBusLocations, err := http.Get("http://tmtitsapi.locationtracker.com/api/getLastTrackingData") //GET request to TMTU for BusLocations data
 	if err != nil {
 		log.Fatal(err)
@@ -321,16 +332,159 @@ func buslocations(i int) {
 		fmt.Println(err)
 	}
 
-	err1 := os.MkdirAll("output/buslocations", 0750)
-	if err != nil && !os.IsExist(err) {
-		log.Fatal(err1)
-	}
-
-	fmt.Printf("Iterating %d times\n", i)
-	saveSrc := fmt.Sprintf("output/buslocations/%d.json", i)
-	err = os.WriteFile(saveSrc, bodyBusLocations, 0644)
+	var busLocations ResponseBusLocations
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	json.Unmarshal(bodyBusLocations, &busLocations)
+
+	for j := 0; j < len(busLocations.Data); j++ {
+		lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
+		lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
+		coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
+		var result bson.M
+		err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
+				prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
+				LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
+				LastNCSentDateBson := primitive.NewDateTimeFromTime(LastNCSentDateTime)
+				DispatchDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].DispatchDateTime)
+				DispatchDateBson := primitive.NewDateTimeFromTime(DispatchDateTime)
+
+				iVehID, _ := strconv.Atoi(busLocations.Data[j].VehID)
+				iCmpID, _ := strconv.Atoi(busLocations.Data[j].CmpID)
+				iToken, _ := strconv.Atoi(busLocations.Data[j].Token)
+				iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
+				iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
+
+				fbusLocationsLatitude, err := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fbusLocationsLongitude, err := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fFuel, err := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fOdometer, err := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fDistance, err := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETATime, err := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETAOldTime, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETATime1, err := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETAOldTime1, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fAvgspeed, err := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fSpeed, err := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				var bIgnition bool
+				var bAC bool
+				var bDI4 bool
+				var bAUX1 bool
+				if busLocations.Data[j].Ignition == "ON" {
+					bIgnition, err = strconv.ParseBool("true")
+				}
+
+				if busLocations.Data[j].AUX1 == "ON" {
+					bAUX1, err = strconv.ParseBool("true")
+				}
+				if busLocations.Data[j].DI4 == "ON" {
+					bDI4, err = strconv.ParseBool("true")
+				}
+				if busLocations.Data[j].AC == "ON" {
+					bAC, err = strconv.ParseBool("true")
+				}
+				if err != nil {
+					fmt.Println(err)
+				}
+				bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
+
+				if busLocations.Data[j].CSent == "0" {
+					busLocations.Data[j].CSent = ""
+				}
+				if busLocations.Data[j].NCSent == "0" {
+					busLocations.Data[j].NCSent = ""
+				}
+				if busLocations.Data[j].Temparature == "0" {
+					busLocations.Data[j].Temparature = ""
+				}
+
+				location := Location{
+					Type:        "Point",
+					Coordinates: []float64{fbusLocationsLongitude, fbusLocationsLatitude},
+				}
+				bus := Data{
+					IdxTrackidPk:     busLocations.Data[j].IdxTrackidPk,
+					VehID:            iVehID,
+					CmpID:            iCmpID,
+					LastTrackdt:      lastTrackdtBson,
+					NCSent:           busLocations.Data[j].NCSent,
+					CSent:            busLocations.Data[j].CSent,
+					PrevTrackDt:      prevTrackdtBson,
+					LastNCSentDate:   LastNCSentDateBson,
+					City:             busLocations.Data[j].City,
+					Speed:            fSpeed,
+					ImagePath:        busLocations.Data[j].ImagePath,
+					AC:               bAC,
+					Ignition:         bIgnition,
+					AUX1:             bAUX1,
+					DI4:              bDI4,
+					Fuel:             fFuel,
+					Temparature:      busLocations.Data[j].Temparature,
+					WPointNo:         busLocations.Data[j].WPointNo,
+					Odometer:         fOdometer,
+					Distance:         fDistance,
+					ETATime:          fETATime,
+					ETARoute:         busLocations.Data[j].ETARoute,
+					ETAOldTime:       fETAOldTime,
+					Routeflag:        bRouteflag,
+					ETARouteName:     busLocations.Data[j].ETARouteName,
+					DirectionFrom:    busLocations.Data[j].DirectionFrom,
+					DirectionTo:      busLocations.Data[j].DirectionTo,
+					DispatchDateTime: DispatchDateBson,
+					ETATime1:         fETATime1,
+					ETAOldTime1:      fETAOldTime1,
+					Routeflag1:       busLocations.Data[j].Routeflag1,
+					RouteNo:          iRouteNo,
+					WaybillNo:        iWaybillNo,
+					Lastwaypointid:   busLocations.Data[j].Lastwaypointid,
+					Token:            iToken,
+					Avgspeed:         fAvgspeed,
+					VehNo:            busLocations.Data[j].GetVehicle.VehNo,
+					Location:         location,
+				}
+
+				coll.InsertOne(context.TODO(), bus)
+			}
+			fmt.Print("+")
+		}
 	}
 
 	respLimitRemaining := respBusLocations.Header.Get("X-RateLimit-Remaining")
@@ -340,7 +494,7 @@ func buslocations(i int) {
 	}
 
 	for {
-		if 2 < respLimitRemainingint {
+		if 5 < respLimitRemainingint {
 			break
 		} else {
 			time.Sleep(10 * time.Second)
@@ -349,187 +503,6 @@ func buslocations(i int) {
 	}
 	fmt.Printf("Saved Data for Bus Locations at %s \n", time.Now())
 	fmt.Printf("API Limit Remaining: %s \n", respLimitRemaining)
-	fmt.Println("Waiting for 5secs...")
-	time.Sleep(5 * time.Second)
-}
-
-func mongoBusLocationSaver(x int, y int) {
-	start := time.Now()
-	uri := "mongodb://localhost:27017" //monogodb Connection String
-	if uri == "" {
-		log.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
-	}
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
-	if err != nil {
-		panic(err)
-	}
-
-	defer func() {
-		if err := client.Disconnect(context.TODO()); err != nil {
-			panic(err)
-		}
-	}()
-
-	for i := x; i <= y; i++ {
-
-		fileNo := strconv.Itoa(i)
-		fileName := fileNo + ".json"
-		filePath := filepath.Join("output", "buslocations", fileName)
-		fileData, err := os.ReadFile(filePath)
-		fmt.Printf("Reading file %s \n", fileNo)
-		var busLocations ResponseBusLocations
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		json.Unmarshal(fileData, &busLocations)
-		for j := 0; j < len(busLocations.Data); j++ {
-			lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
-			lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
-			coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
-			var result bson.M
-			err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
-			if err != nil {
-				if err == mongo.ErrNoDocuments {
-					prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
-					prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
-					LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
-					LastNCSentDateBson := primitive.NewDateTimeFromTime(LastNCSentDateTime)
-					DispatchDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].DispatchDateTime)
-					DispatchDateBson := primitive.NewDateTimeFromTime(DispatchDateTime)
-
-					iVehID, _ := strconv.Atoi(busLocations.Data[j].VehID)
-					iCmpID, _ := strconv.Atoi(busLocations.Data[j].CmpID)
-					iToken, _ := strconv.Atoi(busLocations.Data[j].Token)
-					iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
-					iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
-
-					fbusLocationsLatitude, err := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fbusLocationsLongitude, err := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fFuel, err := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fOdometer, err := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fDistance, err := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fETATime, err := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fETAOldTime, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fETATime1, err := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fETAOldTime1, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fAvgspeed, err := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					fSpeed, err := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					var bIgnition bool
-					var bAC bool
-					var bDI4 bool
-					var bAUX1 bool
-					if busLocations.Data[j].Ignition == "ON" {
-						bIgnition, err = strconv.ParseBool("true")
-					}
-
-					if busLocations.Data[j].AUX1 == "ON" {
-						bAUX1, err = strconv.ParseBool("true")
-					}
-					if busLocations.Data[j].DI4 == "ON" {
-						bDI4, err = strconv.ParseBool("true")
-					}
-					if busLocations.Data[j].AC == "ON" {
-						bAC, err = strconv.ParseBool("true")
-					}
-					if err != nil {
-						fmt.Println(err)
-					}
-					bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
-
-					if busLocations.Data[j].CSent == "0" {
-						busLocations.Data[j].CSent = ""
-					}
-					if busLocations.Data[j].NCSent == "0" {
-						busLocations.Data[j].NCSent = ""
-					}
-					if busLocations.Data[j].Temparature == "0" {
-						busLocations.Data[j].Temparature = ""
-					}
-
-					location := Location{
-						Type:        "Point",
-						Coordinates: []float64{fbusLocationsLongitude, fbusLocationsLatitude},
-					}
-					bus := Data{
-						IdxTrackidPk:     busLocations.Data[j].IdxTrackidPk,
-						VehID:            iVehID,
-						CmpID:            iCmpID,
-						LastTrackdt:      lastTrackdtBson,
-						NCSent:           busLocations.Data[j].NCSent,
-						CSent:            busLocations.Data[j].CSent,
-						PrevTrackDt:      prevTrackdtBson,
-						LastNCSentDate:   LastNCSentDateBson,
-						City:             busLocations.Data[j].City,
-						Speed:            fSpeed,
-						ImagePath:        busLocations.Data[j].ImagePath,
-						AC:               bAC,
-						Ignition:         bIgnition,
-						AUX1:             bAUX1,
-						DI4:              bDI4,
-						Fuel:             fFuel,
-						Temparature:      busLocations.Data[j].Temparature,
-						WPointNo:         busLocations.Data[j].WPointNo,
-						Odometer:         fOdometer,
-						Distance:         fDistance,
-						ETATime:          fETATime,
-						ETARoute:         busLocations.Data[j].ETARoute,
-						ETAOldTime:       fETAOldTime,
-						Routeflag:        bRouteflag,
-						ETARouteName:     busLocations.Data[j].ETARouteName,
-						DirectionFrom:    busLocations.Data[j].DirectionFrom,
-						DirectionTo:      busLocations.Data[j].DirectionTo,
-						DispatchDateTime: DispatchDateBson,
-						ETATime1:         fETATime1,
-						ETAOldTime1:      fETAOldTime1,
-						Routeflag1:       busLocations.Data[j].Routeflag1,
-						RouteNo:          iRouteNo,
-						WaybillNo:        iWaybillNo,
-						Lastwaypointid:   busLocations.Data[j].Lastwaypointid,
-						Token:            iToken,
-						Avgspeed:         fAvgspeed,
-						VehNo:            busLocations.Data[j].GetVehicle.VehNo,
-						Location:         location,
-					}
-
-					coll.InsertOne(context.TODO(), bus)
-				}
-				fmt.Print("+")
-			}
-		}
-	}
-	fmt.Printf("\nTime taken for MongoDB saver :%s", time.Since(start))
+	fmt.Println("Waiting for 7secs...")
+	time.Sleep(7 * time.Second)
 }
