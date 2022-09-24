@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"time"
 
-	firebase "firebase.google.com/go/v4"
 	geojson "github.com/paulmach/go.geojson"
-	"google.golang.org/api/option"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type ResponseWaypoints struct {
@@ -86,16 +88,16 @@ type ResponseBusLocations struct {
 		LastNCSentDate   string      `json:"LastNCSentDate"`
 		Longitude        string      `json:"Longitude"`
 		Latitude         string      `json:"Latitude"`
-		City             interface{} `json:"City"`
+		City             interface{} `json:"City,omitempty"`
 		Speed            string      `json:"Speed"`
-		ImagePath        interface{} `json:"ImagePath"`
+		ImagePath        interface{} `json:"ImagePath,omitempty"`
 		AC               string      `json:"AC"`
 		Ignition         string      `json:"Ignition"`
 		AUX1             string      `json:"AUX1"`
 		DI4              string      `json:"DI4"`
 		Fuel             string      `json:"Fuel"`
 		Temparature      string      `json:"Temparature"`
-		WPointNo         interface{} `json:"WPointNo"`
+		WPointNo         int         `json:"WPointNo,omitempty"`
 		Odometer         string      `json:"Odometer"`
 		Distance         string      `json:"Distance"`
 		ETATime          string      `json:"ETATime"`
@@ -108,10 +110,10 @@ type ResponseBusLocations struct {
 		DispatchDateTime string      `json:"DispatchDateTime"`
 		ETATime1         string      `json:"ETATime1"`
 		ETAOldTime1      string      `json:"ETAOldTime1"`
-		Routeflag1       interface{} `json:"routeflag1"`
+		Routeflag1       int         `json:"routeflag1,omitempty"`
 		RouteNo          string      `json:"RouteNo"`
 		WaybillNo        string      `json:"WaybillNo"`
-		Lastwaypointid   interface{} `json:"lastwaypointid"`
+		Lastwaypointid   int         `json:"lastwaypointid,omitempty"`
 		Token            string      `json:"token"`
 		Avgspeed         string      `json:"avgspeed"`
 		LatLong          string      `json:"LatLong"`
@@ -122,20 +124,50 @@ type ResponseBusLocations struct {
 	} `json:"data"`
 }
 
-// BusLocation is a json-serializable type.
-type BusLocation struct {
-	Vehid         string      `json:"veh_id,omitempty"`
-	RouteNo       string      `json:"route_no,omitempty"`
-	Longitude     string      `json:"longitude,omitempty"`
-	Latitude      string      `json:"latitude,omitempty"`
-	From          string      `json:"from,omitempty"`
-	To            string      `json:"to,omitempty"`
-	Waypoint      interface{} `json:"waypoint,omitempty"`
-	LastWaypoint  interface{} `json:"last_waypoint,omitempty"`
-	LastTrackTime string      `json:"last_track_time,omitempty"`
-	DispatchTime  string      `json:"dispatch_time,omitempty"`
-	VehNo         string      `json:"veh_no,omitempty"`
-	CheckedAt     string      `json:"checked_at,omitempty"`
+type Data struct {
+	IdxTrackidPk     int                `bson:"idx_Trackid_pk"`
+	VehID            int                `bson:"VehId"`
+	VehNo            string             `bson:"VehNo"`
+	CmpID            int                `bson:"CmpId"`
+	LastTrackdt      primitive.DateTime `bson:"LastTrackdt"`
+	NCSent           string             `bson:"NCSent,omitempty"`
+	CSent            string             `bson:"CSent,omitempty"`
+	PrevTrackDt      primitive.DateTime `bson:"PrevTrackDt"`
+	LastNCSentDate   primitive.DateTime `bson:"LastNCSentDate"`
+	City             interface{}        `bson:"City,omitempty"`
+	Speed            float64            `bson:"Speed"`
+	ImagePath        interface{}        `bson:"ImagePath,omitempty"`
+	AC               bool               `bson:"AC"`
+	Ignition         bool               `bson:"Ignition"`
+	AUX1             bool               `bson:"AUX1"`
+	DI4              bool               `bson:"DI4"`
+	Fuel             float64            `bson:"Fuel,omitempty"`
+	Temparature      string             `bson:"Temperature,omitempty"`
+	WPointNo         int                `bson:"WPointNo,omitempty"`
+	Odometer         float64            `bson:"Odometer"`
+	Distance         float64            `bson:"Distance"`
+	ETATime          float64            `bson:"ETATime"`
+	ETARoute         string             `bson:"ETARoute,omitempty"`
+	ETAOldTime       float64            `bson:"ETAOldTime"`
+	Routeflag        bool               `bson:"routeflag"`
+	ETARouteName     string             `bson:"ETARouteName"`
+	DirectionFrom    string             `bson:"DirectionFrom"`
+	DirectionTo      string             `bson:"DirectionTo"`
+	DispatchDateTime primitive.DateTime `bson:"DispatchDateTime"`
+	ETATime1         float64            `bson:"ETATime1"`
+	ETAOldTime1      float64            `bson:"ETAOldTime1"`
+	Routeflag1       int                `bson:"routeflag1,omitempty"`
+	RouteNo          int                `bson:"RouteNo"`
+	WaybillNo        int                `bson:"WaybillNo"`
+	Lastwaypointid   int                `bson:"lastwaypointid,omitempty"`
+	Token            int                `bson:"token"`
+	Avgspeed         float64            `bson:"avgspeed"`
+	Location         Location
+}
+
+type Location struct {
+	Type        string    `bson:"type"`
+	Coordinates []float64 `bson:"coordinates"`
 }
 
 func main() {
@@ -145,13 +177,16 @@ func main() {
 	}
 
 	waypoints()
+
 	routes()
-
+	start := time.Now()
+	fmt.Printf("Started At:%s\n", start.String())
+	i := 1
 	for {
-		fmt.Printf("Started At:%s\n", time.Now())
-		buslocations()
+		buslocations(i)
+		fmt.Printf("Running: %d(s) times,Time Since Start:%s", i, time.Since(start).String())
+		i++
 	}
-
 }
 
 func waypoints() {
@@ -210,8 +245,11 @@ func waypoints() {
 }
 
 func routes() {
-	var stops = make(map[int]string)
-	var ref []int
+	err := os.MkdirAll("output/rawroutes/routes", 0750)
+	if err != nil && !os.IsExist(err) {
+		log.Fatal(err)
+	}
+
 	respRoutes, err := http.Get("http://tmtitsapi.locationtracker.com/api/getRouteMaster") //GET request to TMTU for routes data
 	if err != nil {
 		log.Fatal(err)
@@ -230,7 +268,6 @@ func routes() {
 	if err := json.Unmarshal(bodyRoutes, &resultRoutes); err != nil { // Parse []byte to the go struct pointer
 		fmt.Println(err)
 	}
-	waypoints := geojson.NewFeatureCollection()
 	for i := 0; i < len(resultRoutes.Data); i++ {
 
 		data := url.Values{
@@ -253,102 +290,31 @@ func routes() {
 		if err != nil {
 			fmt.Println("wrong here2")
 		}
-		var resultRouteNo ResponseRouteNo
-		if err := json.Unmarshal(bodyRouteNo, &resultRouteNo); err != nil { // Parse []byte to the go struct pointer
-			fmt.Println("wrong here3")
-		}
-		//fmt.Print(resultRouteNo)
-		routes := geojson.NewFeatureCollection()
 
-		for j := 0; j < len(resultRouteNo.Data[0].RouteDetails); j++ {
-
-			sWaypointNo, err := strconv.ParseInt(resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo, 10, 64)
-			if err != nil {
-				fmt.Println("wrong here15")
-			}
-			flag := 0
-			for k := 0; k < len(stops); k++ {
-
-				if int64(ref[k]) == sWaypointNo {
-					flag = 1
-				}
-			}
-			if flag == 0 {
-				ref = append(ref, int(sWaypointNo))
-			}
-
-			sresultRouteNoLatitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Latitude, 64)
-			if err != nil {
-				fmt.Println("wrong here16")
-			}
-			sresultRouteNoLongitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Longitude, 64)
-			if err != nil {
-				fmt.Println("wrong here1")
-			}
-			feature := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
-			feature.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
-			feature.SetProperty("ref", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo)
-			feature.SetProperty("position", j)
-			routes.AddFeature(feature)
-
-			for k := 0; k < len(ref); k++ {
-				if ref[k] == int(sWaypointNo) {
-					stops[int(sWaypointNo)] = resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName
-					feature1 := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
-					feature1.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
-					feature1.SetProperty("ref", sWaypointNo)
-					feature1.SetProperty("highway", "bus_stop")
-					feature1.SetProperty("operator", "Thane Municipal Transport")
-					feature1.SetProperty("public_transport", "platform")
-					waypoints.AddFeature(feature1)
-				}
-			}
-		}
-
-		rawJSON1, err := routes.MarshalJSON()
-		if err != nil {
-			fmt.Printf("error: %v", err)
-			return
-		}
-
-		fn := fmt.Sprintf("output/TMTRoutes%s-%s.json", resultRoutes.Data[i].RouteNo, resultRoutes.Data[i].RouteNum)
-		err = os.WriteFile(fn, rawJSON1, 0644)
+		fn := fmt.Sprintf("output/rawroutes/routes/TMTRoutes%s-%s.json", resultRoutes.Data[i].RouteNo, resultRoutes.Data[i].RouteNum)
+		err = os.WriteFile(fn, bodyRouteNo, 0644)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-	rawJSON, err := waypoints.MarshalJSON()
-	if err != nil {
-		fmt.Printf("error: %v", err)
-		return
-	}
-
-	//Saves the geojson file for bus stops to the current directory
-	//fmt.Printf("%s", string(rawJSON))
-	err = os.WriteFile("output/TMTStopsThroughRoutes.json", rawJSON, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
-func buslocations() {
+func buslocations(i int) {
 
-	ctx := context.Background()
-	conf := &firebase.Config{
-		DatabaseURL: "https://tmtu-buslocations-default-rtdb.asia-southeast1.firebasedatabase.app",
+	uri := "mongodb://localhost:27017" //monogodb Connection String
+	if uri == "" {
+		log.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
 	}
-	// Fetch the service account key JSON file contents
-	opt := option.WithCredentialsFile("serviceAccount.json")
-
-	app, err := firebase.NewApp(ctx, conf, opt)
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
-		log.Fatalln("Error initializing app:", err)
+		panic(err)
 	}
 
-	client, err := app.Database(ctx)
-	if err != nil {
-		log.Fatalln("Error initializing database client:", err)
-	}
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
 
 	respBusLocations, err := http.Get("http://tmtitsapi.locationtracker.com/api/getLastTrackingData") //GET request to TMTU for BusLocations data
 	if err != nil {
@@ -365,37 +331,160 @@ func buslocations() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	var resultBusLocations ResponseBusLocations
-	if err := json.Unmarshal(bodyBusLocations, &resultBusLocations); err != nil { // Parse []byte to the go struct pointer
-		fmt.Println(err)
+
+	var busLocations ResponseBusLocations
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	for i := 0; i < len(resultBusLocations.Data); i++ {
-		fmt.Printf("On bus no:%s \n", resultBusLocations.Data[i].GetVehicle.Vehid)
-		//busID, err := strconv.ParseInt(resultBusLocations.Data[i].GetVehicle.Vehid, 10, 64)
+	json.Unmarshal(bodyBusLocations, &busLocations)
+
+	for j := 0; j < len(busLocations.Data); j++ {
+		lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
+		lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
+		coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
+		var result bson.M
+		err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
 		if err != nil {
-			fmt.Println(err)
-		}
-		ref := client.NewRef("tmtu/bus_locations")
+			if err == mongo.ErrNoDocuments {
+				prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
+				prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
+				LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
+				LastNCSentDateBson := primitive.NewDateTimeFromTime(LastNCSentDateTime)
+				DispatchDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].DispatchDateTime)
+				DispatchDateBson := primitive.NewDateTimeFromTime(DispatchDateTime)
 
-		usersRef := ref.Child(resultBusLocations.Data[i].GetVehicle.Vehid)
-		if _, errRTDB := usersRef.Push(ctx, &BusLocation{
-			Vehid:         resultBusLocations.Data[i].GetVehicle.Vehid,
-			VehNo:         resultBusLocations.Data[i].GetVehicle.VehNo,
-			RouteNo:       resultBusLocations.Data[i].RouteNo,
-			Longitude:     resultBusLocations.Data[i].Longitude,
-			Latitude:      resultBusLocations.Data[i].Latitude,
-			From:          resultBusLocations.Data[i].DirectionFrom,
-			To:            resultBusLocations.Data[i].DirectionTo,
-			Waypoint:      resultBusLocations.Data[i].WPointNo,
-			LastWaypoint:  resultBusLocations.Data[i].Lastwaypointid,
-			LastTrackTime: resultBusLocations.Data[i].LastTrackdt,
-			DispatchTime:  resultBusLocations.Data[i].DispatchDateTime,
-			CheckedAt:     time.Now().String(),
-		}); errRTDB != nil {
-			log.Fatalln("Error pushing child node:", errRTDB)
-		}
+				iVehID, _ := strconv.Atoi(busLocations.Data[j].VehID)
+				iCmpID, _ := strconv.Atoi(busLocations.Data[j].CmpID)
+				iToken, _ := strconv.Atoi(busLocations.Data[j].Token)
+				iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
+				iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
 
+				fbusLocationsLatitude, err := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fbusLocationsLongitude, err := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fFuel, err := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fOdometer, err := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fDistance, err := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETATime, err := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETAOldTime, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETATime1, err := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fETAOldTime1, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fAvgspeed, err := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fSpeed, err := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
+				if err != nil {
+					fmt.Println(err)
+				}
+				var bIgnition bool
+				var bAC bool
+				var bDI4 bool
+				var bAUX1 bool
+				if busLocations.Data[j].Ignition == "ON" {
+					bIgnition, err = strconv.ParseBool("true")
+				}
+
+				if busLocations.Data[j].AUX1 == "ON" {
+					bAUX1, err = strconv.ParseBool("true")
+				}
+				if busLocations.Data[j].DI4 == "ON" {
+					bDI4, err = strconv.ParseBool("true")
+				}
+				if busLocations.Data[j].AC == "ON" {
+					bAC, err = strconv.ParseBool("true")
+				}
+				if err != nil {
+					fmt.Println(err)
+				}
+				bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
+
+				if busLocations.Data[j].CSent == "0" {
+					busLocations.Data[j].CSent = ""
+				}
+				if busLocations.Data[j].NCSent == "0" {
+					busLocations.Data[j].NCSent = ""
+				}
+				if busLocations.Data[j].Temparature == "0" {
+					busLocations.Data[j].Temparature = ""
+				}
+
+				location := Location{
+					Type:        "Point",
+					Coordinates: []float64{fbusLocationsLongitude, fbusLocationsLatitude},
+				}
+				bus := Data{
+					IdxTrackidPk:     busLocations.Data[j].IdxTrackidPk,
+					VehID:            iVehID,
+					CmpID:            iCmpID,
+					LastTrackdt:      lastTrackdtBson,
+					NCSent:           busLocations.Data[j].NCSent,
+					CSent:            busLocations.Data[j].CSent,
+					PrevTrackDt:      prevTrackdtBson,
+					LastNCSentDate:   LastNCSentDateBson,
+					City:             busLocations.Data[j].City,
+					Speed:            fSpeed,
+					ImagePath:        busLocations.Data[j].ImagePath,
+					AC:               bAC,
+					Ignition:         bIgnition,
+					AUX1:             bAUX1,
+					DI4:              bDI4,
+					Fuel:             fFuel,
+					Temparature:      busLocations.Data[j].Temparature,
+					WPointNo:         busLocations.Data[j].WPointNo,
+					Odometer:         fOdometer,
+					Distance:         fDistance,
+					ETATime:          fETATime,
+					ETARoute:         busLocations.Data[j].ETARoute,
+					ETAOldTime:       fETAOldTime,
+					Routeflag:        bRouteflag,
+					ETARouteName:     busLocations.Data[j].ETARouteName,
+					DirectionFrom:    busLocations.Data[j].DirectionFrom,
+					DirectionTo:      busLocations.Data[j].DirectionTo,
+					DispatchDateTime: DispatchDateBson,
+					ETATime1:         fETATime1,
+					ETAOldTime1:      fETAOldTime1,
+					Routeflag1:       busLocations.Data[j].Routeflag1,
+					RouteNo:          iRouteNo,
+					WaybillNo:        iWaybillNo,
+					Lastwaypointid:   busLocations.Data[j].Lastwaypointid,
+					Token:            iToken,
+					Avgspeed:         fAvgspeed,
+					VehNo:            busLocations.Data[j].GetVehicle.VehNo,
+					Location:         location,
+				}
+
+				coll.InsertOne(context.TODO(), bus)
+			}
+			fmt.Print("+")
+		}
 	}
 
 	respLimitRemaining := respBusLocations.Header.Get("X-RateLimit-Remaining")
@@ -405,15 +494,15 @@ func buslocations() {
 	}
 
 	for {
-		if 2 < respLimitRemainingint {
+		if 5 < respLimitRemainingint {
 			break
 		} else {
 			time.Sleep(10 * time.Second)
 			fmt.Print("Waiting for 5 seconds for the API limit to reset\n")
 		}
 	}
-	fmt.Printf("Entered Data for Bus Locations at %s \n", time.Now())
+	fmt.Printf("Saved Data for Bus Locations at %s \n", time.Now())
 	fmt.Printf("API Limit Remaining: %s \n", respLimitRemaining)
-	fmt.Println("Waiting for 5secs...")
-	time.Sleep(5 * time.Second)
+	fmt.Println("Waiting for 7secs...")
+	time.Sleep(7 * time.Second)
 }
