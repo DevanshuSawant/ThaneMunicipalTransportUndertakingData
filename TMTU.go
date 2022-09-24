@@ -177,7 +177,7 @@ func main() {
 	fmt.Println("2. Bus Stops, Bus Routes")
 	fmt.Println("3. Bus Locations")
 	chooser := 1
-	fmt.Scanf("\n%d", &chooser)
+	fmt.Scanf("%d", &chooser)
 	err := os.MkdirAll("output", 0750)
 	if err != nil && !os.IsExist(err) {
 		log.Fatal(err)
