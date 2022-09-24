@@ -172,12 +172,12 @@ type Location struct {
 
 func main() {
 
-	fmt.Println("Choose Which Data you want to store (Choose'1','2','3') Default is '1' ")
+	fmt.Println("Choose Which Data you want to store (Choose'1','2','3') Default is FULL functionality ")
 	fmt.Println("1. Bus Stops, Bus Routes, Bus Locations")
 	fmt.Println("2. Bus Stops, Bus Routes")
 	fmt.Println("3. Bus Locations")
 	chooser := 1
-	fmt.Scanf("%d", &chooser)
+	fmt.Scanf("\n%d", &chooser)
 	err := os.MkdirAll("output", 0750)
 	if err != nil && !os.IsExist(err) {
 		log.Fatal(err)
@@ -189,6 +189,22 @@ func main() {
 		fmt.Println("Adding Bus Stops")
 		waypoints()
 		fmt.Printf("\nBus Stops Added in: %s\n", time.Since(start))
+
+		start = time.Now()
+		fmt.Println("Adding Bus Routes")
+		routes()
+		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
+
+		start = time.Now()
+		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
+		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
+		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
+		i := 1
+		for {
+			buslocations(i)
+			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
+			i++
+		}
 
 	case chooser == 2:
 		start := time.Now()
@@ -454,6 +470,7 @@ func buslocations(i int) {
 
 	json.Unmarshal(bodyBusLocations, &busLocations)
 
+	fmt.Print("\n")
 	for j := 0; j < len(busLocations.Data); j++ {
 		lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
 		lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
@@ -475,70 +492,45 @@ func buslocations(i int) {
 				iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
 				iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
 
-				fbusLocationsLatitude, err := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fbusLocationsLongitude, err := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fFuel, err := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fOdometer, err := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fDistance, err := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fETATime, err := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fETAOldTime, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fETATime1, err := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fETAOldTime1, err := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fAvgspeed, err := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
-				fSpeed, err := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
-				if err != nil {
-					fmt.Println(err)
-				}
+				fbusLocationsLatitude, _ := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
+				fbusLocationsLongitude, _ := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
+
+				fFuel, _ := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
+
+				fOdometer, _ := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
+
+				fDistance, _ := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
+
+				fETATime, _ := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
+
+				fETAOldTime, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
+
+				fETATime1, _ := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
+
+				fETAOldTime1, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
+
+				fAvgspeed, _ := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
+
+				fSpeed, _ := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
+
 				var bIgnition bool
 				var bAC bool
 				var bDI4 bool
 				var bAUX1 bool
 				if busLocations.Data[j].Ignition == "ON" {
-					bIgnition, err = strconv.ParseBool("true")
+					bIgnition, _ = strconv.ParseBool("true")
 				}
 
 				if busLocations.Data[j].AUX1 == "ON" {
-					bAUX1, err = strconv.ParseBool("true")
+					bAUX1, _ = strconv.ParseBool("true")
 				}
 				if busLocations.Data[j].DI4 == "ON" {
-					bDI4, err = strconv.ParseBool("true")
+					bDI4, _ = strconv.ParseBool("true")
 				}
 				if busLocations.Data[j].AC == "ON" {
-					bAC, err = strconv.ParseBool("true")
+					bAC, _ = strconv.ParseBool("true")
 				}
-				if err != nil {
-					fmt.Println(err)
-				}
+
 				bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
 
 				if busLocations.Data[j].CSent == "0" {
@@ -616,7 +608,7 @@ func buslocations(i int) {
 			fmt.Print("Waiting for 5 seconds for the API limit to reset\n")
 		}
 	}
-	fmt.Printf("Saved Data for Bus Locations at %s \n", time.Now())
+	fmt.Printf("\nSaved Data for Bus Locations at %s \n", time.Now())
 	fmt.Printf("API Limit Remaining: %s \n", respLimitRemaining)
 	fmt.Println("Waiting for 7secs...")
 	time.Sleep(7 * time.Second)
