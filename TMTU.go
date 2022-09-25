@@ -175,7 +175,7 @@ func main() {
 	fmt.Println("Choose Which Data you want to store (Choose'1','2','3') Default is FULL functionality ")
 	fmt.Println("1. Bus Stops, Bus Routes, Bus Locations")
 	fmt.Println("2. Bus Stops, Bus Routes")
-	fmt.Println("3. Bus Locations")
+	fmt.Printf("3. Bus Locations\n")
 	chooser := 1
 	fmt.Scanf("%d", &chooser)
 	err := os.MkdirAll("output", 0750)
@@ -195,16 +195,7 @@ func main() {
 		routes()
 		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
 
-		start = time.Now()
-		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
-		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
-		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
-		i := 1
-		for {
-			buslocations(i)
-			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
-			i++
-		}
+		buslocations()
 
 	case chooser == 2:
 		start := time.Now()
@@ -218,16 +209,7 @@ func main() {
 		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
 
 	case chooser == 3:
-		start := time.Now()
-		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
-		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
-		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
-		i := 1
-		for {
-			buslocations(i)
-			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
-			i++
-		}
+		buslocations()
 
 	default:
 		start := time.Now()
@@ -240,16 +222,8 @@ func main() {
 		routes()
 		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
 
-		start = time.Now()
-		fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
-		fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
-		fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
-		i := 1
-		for {
-			buslocations(i)
-			fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
-			i++
-		}
+		buslocations()
+
 	}
 }
 
@@ -430,7 +404,13 @@ func routes() {
 	}
 }
 
-func buslocations(i int) {
+func buslocations() {
+
+	start := time.Now()
+	fmt.Println("--------WARNING THIS WILL RUN INDEFINITELY--------")
+	fmt.Println("-------------TO EXIT STOP THE PROGRAM-------------")
+	fmt.Printf("Started Bus Location Tracking At:%s\n", start.String())
+	i := 1
 
 	uri := "mongodb://localhost:27017" //monogodb Connection String
 	if uri == "" {
@@ -443,173 +423,170 @@ func buslocations(i int) {
 
 	defer func() {
 		if err := client.Disconnect(context.TODO()); err != nil {
-			panic(err)
+			fmt.Println(err)
 		}
 	}()
 
-	respBusLocations, err := http.Get("http://tmtitsapi.locationtracker.com/api/getLastTrackingData") //GET request to TMTU for BusLocations data
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
+	for {
+		noOfAddedPositions := 1
+		fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
+		respBusLocations, err := http.Get("http://tmtitsapi.locationtracker.com/api/getLastTrackingData") //GET request to TMTU for BusLocations data
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				fmt.Println(err)
+			}
+		}(respBusLocations.Body)
+
+		bodyBusLocations, err := io.ReadAll(respBusLocations.Body) // response body is []byte
 		if err != nil {
 			fmt.Println(err)
 		}
-	}(respBusLocations.Body)
 
-	bodyBusLocations, err := io.ReadAll(respBusLocations.Body) // response body is []byte
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	var busLocations ResponseBusLocations
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	json.Unmarshal(bodyBusLocations, &busLocations)
-
-	fmt.Print("\n")
-	for j := 0; j < len(busLocations.Data); j++ {
-		lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
-		lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
-		coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
-		var result bson.M
-		err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
+		var busLocations ResponseBusLocations
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
-				prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
-				LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
-				LastNCSentDateBson := primitive.NewDateTimeFromTime(LastNCSentDateTime)
-				DispatchDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].DispatchDateTime)
-				DispatchDateBson := primitive.NewDateTimeFromTime(DispatchDateTime)
+			log.Fatal(err)
+		}
 
-				iVehID, _ := strconv.Atoi(busLocations.Data[j].VehID)
-				iCmpID, _ := strconv.Atoi(busLocations.Data[j].CmpID)
-				iToken, _ := strconv.Atoi(busLocations.Data[j].Token)
-				iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
-				iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
+		json.Unmarshal(bodyBusLocations, &busLocations)
 
-				fbusLocationsLatitude, _ := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
-				fbusLocationsLongitude, _ := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
+		fmt.Print("\n")
+		for j := 0; j < len(busLocations.Data); j++ {
+			lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
+			lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
+			coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
+			var result bson.M
+			err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
+					prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
+					LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
+					LastNCSentDateBson := primitive.NewDateTimeFromTime(LastNCSentDateTime)
+					DispatchDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].DispatchDateTime)
+					DispatchDateBson := primitive.NewDateTimeFromTime(DispatchDateTime)
 
-				fFuel, _ := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
+					iVehID, _ := strconv.Atoi(busLocations.Data[j].VehID)
+					iCmpID, _ := strconv.Atoi(busLocations.Data[j].CmpID)
+					iToken, _ := strconv.Atoi(busLocations.Data[j].Token)
+					iRouteNo, _ := strconv.Atoi(busLocations.Data[j].RouteNo)
+					iWaybillNo, _ := strconv.Atoi(busLocations.Data[j].WaybillNo)
 
-				fOdometer, _ := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
+					fbusLocationsLatitude, _ := strconv.ParseFloat(busLocations.Data[j].Latitude, 64)
+					fbusLocationsLongitude, _ := strconv.ParseFloat(busLocations.Data[j].Longitude, 64)
 
-				fDistance, _ := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
+					fFuel, _ := strconv.ParseFloat(busLocations.Data[j].Fuel, 64)
+					fOdometer, _ := strconv.ParseFloat(busLocations.Data[j].Odometer, 64)
+					fDistance, _ := strconv.ParseFloat(busLocations.Data[j].Distance, 64)
+					fETATime, _ := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
+					fETAOldTime, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
+					fETATime1, _ := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
+					fETAOldTime1, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
+					fAvgspeed, _ := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
+					fSpeed, _ := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
 
-				fETATime, _ := strconv.ParseFloat(busLocations.Data[j].ETATime, 64)
+					var bIgnition bool
+					var bAC bool
+					var bDI4 bool
+					var bAUX1 bool
+					if busLocations.Data[j].Ignition == "ON" {
+						bIgnition, _ = strconv.ParseBool("true")
+					}
 
-				fETAOldTime, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime, 64)
+					if busLocations.Data[j].AUX1 == "ON" {
+						bAUX1, _ = strconv.ParseBool("true")
+					}
+					if busLocations.Data[j].DI4 == "ON" {
+						bDI4, _ = strconv.ParseBool("true")
+					}
+					if busLocations.Data[j].AC == "ON" {
+						bAC, _ = strconv.ParseBool("true")
+					}
 
-				fETATime1, _ := strconv.ParseFloat(busLocations.Data[j].ETATime1, 64)
+					bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
 
-				fETAOldTime1, _ := strconv.ParseFloat(busLocations.Data[j].ETAOldTime1, 64)
+					if busLocations.Data[j].CSent == "0" {
+						busLocations.Data[j].CSent = ""
+					}
+					if busLocations.Data[j].NCSent == "0" {
+						busLocations.Data[j].NCSent = ""
+					}
+					if busLocations.Data[j].Temparature == "0" {
+						busLocations.Data[j].Temparature = ""
+					}
 
-				fAvgspeed, _ := strconv.ParseFloat(busLocations.Data[j].Avgspeed, 64)
+					location := Location{
+						Type:        "Point",
+						Coordinates: []float64{fbusLocationsLongitude, fbusLocationsLatitude},
+					}
+					bus := Data{
+						IdxTrackidPk:     busLocations.Data[j].IdxTrackidPk,
+						VehID:            iVehID,
+						CmpID:            iCmpID,
+						LastTrackdt:      lastTrackdtBson,
+						NCSent:           busLocations.Data[j].NCSent,
+						CSent:            busLocations.Data[j].CSent,
+						PrevTrackDt:      prevTrackdtBson,
+						LastNCSentDate:   LastNCSentDateBson,
+						City:             busLocations.Data[j].City,
+						Speed:            fSpeed,
+						ImagePath:        busLocations.Data[j].ImagePath,
+						AC:               bAC,
+						Ignition:         bIgnition,
+						AUX1:             bAUX1,
+						DI4:              bDI4,
+						Fuel:             fFuel,
+						Temparature:      busLocations.Data[j].Temparature,
+						WPointNo:         busLocations.Data[j].WPointNo,
+						Odometer:         fOdometer,
+						Distance:         fDistance,
+						ETATime:          fETATime,
+						ETARoute:         busLocations.Data[j].ETARoute,
+						ETAOldTime:       fETAOldTime,
+						Routeflag:        bRouteflag,
+						ETARouteName:     busLocations.Data[j].ETARouteName,
+						DirectionFrom:    busLocations.Data[j].DirectionFrom,
+						DirectionTo:      busLocations.Data[j].DirectionTo,
+						DispatchDateTime: DispatchDateBson,
+						ETATime1:         fETATime1,
+						ETAOldTime1:      fETAOldTime1,
+						Routeflag1:       busLocations.Data[j].Routeflag1,
+						RouteNo:          iRouteNo,
+						WaybillNo:        iWaybillNo,
+						Lastwaypointid:   busLocations.Data[j].Lastwaypointid,
+						Token:            iToken,
+						Avgspeed:         fAvgspeed,
+						VehNo:            busLocations.Data[j].GetVehicle.VehNo,
+						Location:         location,
+					}
 
-				fSpeed, _ := strconv.ParseFloat(busLocations.Data[j].Speed, 64)
-
-				var bIgnition bool
-				var bAC bool
-				var bDI4 bool
-				var bAUX1 bool
-				if busLocations.Data[j].Ignition == "ON" {
-					bIgnition, _ = strconv.ParseBool("true")
+					coll.InsertOne(context.TODO(), bus)
 				}
-
-				if busLocations.Data[j].AUX1 == "ON" {
-					bAUX1, _ = strconv.ParseBool("true")
-				}
-				if busLocations.Data[j].DI4 == "ON" {
-					bDI4, _ = strconv.ParseBool("true")
-				}
-				if busLocations.Data[j].AC == "ON" {
-					bAC, _ = strconv.ParseBool("true")
-				}
-
-				bRouteflag, _ := strconv.ParseBool(busLocations.Data[j].Routeflag)
-
-				if busLocations.Data[j].CSent == "0" {
-					busLocations.Data[j].CSent = ""
-				}
-				if busLocations.Data[j].NCSent == "0" {
-					busLocations.Data[j].NCSent = ""
-				}
-				if busLocations.Data[j].Temparature == "0" {
-					busLocations.Data[j].Temparature = ""
-				}
-
-				location := Location{
-					Type:        "Point",
-					Coordinates: []float64{fbusLocationsLongitude, fbusLocationsLatitude},
-				}
-				bus := Data{
-					IdxTrackidPk:     busLocations.Data[j].IdxTrackidPk,
-					VehID:            iVehID,
-					CmpID:            iCmpID,
-					LastTrackdt:      lastTrackdtBson,
-					NCSent:           busLocations.Data[j].NCSent,
-					CSent:            busLocations.Data[j].CSent,
-					PrevTrackDt:      prevTrackdtBson,
-					LastNCSentDate:   LastNCSentDateBson,
-					City:             busLocations.Data[j].City,
-					Speed:            fSpeed,
-					ImagePath:        busLocations.Data[j].ImagePath,
-					AC:               bAC,
-					Ignition:         bIgnition,
-					AUX1:             bAUX1,
-					DI4:              bDI4,
-					Fuel:             fFuel,
-					Temparature:      busLocations.Data[j].Temparature,
-					WPointNo:         busLocations.Data[j].WPointNo,
-					Odometer:         fOdometer,
-					Distance:         fDistance,
-					ETATime:          fETATime,
-					ETARoute:         busLocations.Data[j].ETARoute,
-					ETAOldTime:       fETAOldTime,
-					Routeflag:        bRouteflag,
-					ETARouteName:     busLocations.Data[j].ETARouteName,
-					DirectionFrom:    busLocations.Data[j].DirectionFrom,
-					DirectionTo:      busLocations.Data[j].DirectionTo,
-					DispatchDateTime: DispatchDateBson,
-					ETATime1:         fETATime1,
-					ETAOldTime1:      fETAOldTime1,
-					Routeflag1:       busLocations.Data[j].Routeflag1,
-					RouteNo:          iRouteNo,
-					WaybillNo:        iWaybillNo,
-					Lastwaypointid:   busLocations.Data[j].Lastwaypointid,
-					Token:            iToken,
-					Avgspeed:         fAvgspeed,
-					VehNo:            busLocations.Data[j].GetVehicle.VehNo,
-					Location:         location,
-				}
-
-				coll.InsertOne(context.TODO(), bus)
+				noOfAddedPositions++
 			}
-			fmt.Print("+")
 		}
-	}
 
-	respLimitRemaining := respBusLocations.Header.Get("X-RateLimit-Remaining")
-	respLimitRemainingint, err := strconv.ParseInt(respLimitRemaining, 10, 64)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	for {
-		if 5 < respLimitRemainingint {
-			break
-		} else {
-			time.Sleep(10 * time.Second)
-			fmt.Print("Waiting for 5 seconds for the API limit to reset\n")
+		respLimitRemaining := respBusLocations.Header.Get("X-RateLimit-Remaining")
+		respLimitRemainingint, err := strconv.ParseInt(respLimitRemaining, 10, 64)
+		if err != nil {
+			fmt.Println(err)
 		}
+
+		for {
+			if 5 < respLimitRemainingint {
+				break
+			} else {
+				time.Sleep(10 * time.Second)
+				fmt.Print("Waiting for 5 seconds for the API limit to reset\n")
+			}
+		}
+		fmt.Printf("\nSaved Bus Location data for %d buses at %s \n", noOfAddedPositions, time.Now())
+		//fmt.Printf("API Limit Remaining: %s \n", respLimitRemaining)
+		fmt.Println("Waiting for 7secs...")
+		time.Sleep(7 * time.Second)
+		i++
 	}
-	fmt.Printf("\nSaved Data for Bus Locations at %s \n", time.Now())
-	fmt.Printf("API Limit Remaining: %s \n", respLimitRemaining)
-	fmt.Println("Waiting for 7secs...")
-	time.Sleep(7 * time.Second)
 }
