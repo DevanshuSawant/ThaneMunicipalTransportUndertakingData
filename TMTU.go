@@ -176,12 +176,12 @@ func main() {
 	fmt.Println("1. Bus Stops, Bus Routes, Bus Locations")
 	fmt.Println("2. Bus Stops, Bus Routes")
 	fmt.Printf("3. Bus Locations\n")
-	chooser := 1
-	fmt.Scanf("%d", &chooser)
-	err := os.MkdirAll("output", 0750)
-	if err != nil && !os.IsExist(err) {
-		log.Fatal(err)
-	}
+	chooser := 3
+	// fmt.Scanf("%d", &chooser)
+	// err := os.MkdirAll("output", 0750)
+	// if err != nil && !os.IsExist(err) {
+	// 	log.Fatal(err)
+	// }
 
 	switch {
 	case chooser == 1:
@@ -205,11 +205,14 @@ func main() {
 
 		start = time.Now()
 		fmt.Println("Adding Bus Routes")
-		routes()
+		routes_unmodified()
 		fmt.Printf("\nBus Routes Added in: %s\n", time.Since(start))
 
 	case chooser == 3:
 		buslocations()
+
+	case chooser == 4:
+		stops()
 
 	default:
 		start := time.Now()
@@ -277,6 +280,101 @@ func waypoints() {
 	//Saves the geojson file for bus stops to the current directory
 	//fmt.Printf("%s", string(rawJSON))
 	err = os.WriteFile("output/TMTStopsDirect.json", rawJSON, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func stops() {
+	var stops = make(map[int]string)
+	var ref []int
+	d, e := os.ReadDir("output")
+	if e != nil {
+		panic(e)
+	}
+	waypoints := geojson.NewFeatureCollection()
+	for i := 0; i < len(d)-1; i++ {
+		fmt.Println("Restarting...")
+		fmt.Println(i)
+		respRouteNo, err := os.Open("output/" + d[i].Name())
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+		fmt.Println("output/" + d[i].Name())
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				fmt.Println(err)
+			}
+		}(respRouteNo)
+		bodyRouteNo, err := io.ReadAll(respRouteNo) // response body is []byte
+		if err != nil {
+			fmt.Println("wrong here2")
+		}
+		var resultRouteNo ResponseRouteNo
+		if err := json.Unmarshal(bodyRouteNo, &resultRouteNo); err != nil { // Parse []byte to the go struct pointer
+			fmt.Println("wrong here3")
+		}
+		//fmt.Print(resultRouteNo)
+		routes := geojson.NewFeatureCollection()
+
+		for j := 0; j < len(resultRouteNo.Data[0].RouteDetails); j++ {
+
+			sWaypointNo, err := strconv.ParseInt(resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo, 10, 64)
+			if err != nil {
+				fmt.Println("wrong here15")
+			}
+			flag := 0
+			for k := 0; k < len(stops); k++ {
+
+				if int64(ref[k]) == sWaypointNo {
+					flag = 1
+				}
+			}
+			if flag == 0 {
+				ref = append(ref, int(sWaypointNo))
+			}
+
+			sresultRouteNoLatitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Latitude, 64)
+			if err != nil {
+				fmt.Println("wrong here16")
+			}
+			sresultRouteNoLongitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Longitude, 64)
+			if err != nil {
+				fmt.Println("wrong here1")
+			}
+			feature := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+			feature.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+			feature.SetProperty("ref", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo)
+			feature.SetProperty("position", j)
+			routes.AddFeature(feature)
+
+			for k := 0; k < len(ref); k++ {
+				if ref[k] == int(sWaypointNo) {
+					stops[int(sWaypointNo)] = resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName
+					feature1 := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+					feature1.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+					feature1.SetProperty("ref", sWaypointNo)
+					feature1.SetProperty("highway", "bus_stop")
+					feature1.SetProperty("operator", "Thane Municipal Transport")
+					feature1.SetProperty("public_transport", "platform")
+					feature1.SetProperty("position", resultRouteNo.Data[0].RouteDetails[j].SequenceNo)
+					feature1.SetProperty("route_num", resultRouteNo.Data[0].RouteNum)
+					feature1.SetProperty("route_direction", resultRouteNo.Data[0].RouteDirection)
+					waypoints.AddFeature(feature1)
+				}
+			}
+		}
+	}
+	rawJSON2, err := waypoints.MarshalJSON()
+	if err != nil {
+		fmt.Printf("error: %v", err)
+		return
+	}
+
+	//Saves the geojson file for bus stops to the current directory
+	//fmt.Printf("%s", string(rawJSON))
+	err = os.WriteFile("output/TMTStopsThroughRoutes.json", rawJSON2, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -373,6 +471,9 @@ func routes() {
 					feature1.SetProperty("highway", "bus_stop")
 					feature1.SetProperty("operator", "Thane Municipal Transport")
 					feature1.SetProperty("public_transport", "platform")
+					feature1.SetProperty("position", resultRouteNo.Data[0].RouteDetails[j].SequenceNo)
+					feature1.SetProperty("route_num", resultRouteNo.Data[0].RouteNum)
+					feature1.SetProperty("route_direction", resultRouteNo.Data[0].RouteDirection)
 					waypoints.AddFeature(feature1)
 				}
 			}
@@ -404,6 +505,125 @@ func routes() {
 	}
 }
 
+func routes_unmodified() {
+	var stops = make(map[int]string)
+	var ref []int
+	respRoutes, err := http.Get("http://tmtitsapi.locationtracker.com/api/getRouteMaster") //GET request to TMTU for routes data
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(respRoutes.Body)
+	bodyRoutes, err := io.ReadAll(respRoutes.Body) // response body is []byte
+	if err != nil {
+		fmt.Println("wrong here")
+	}
+	var resultRoutes ResponseRouteMaster
+	if err := json.Unmarshal(bodyRoutes, &resultRoutes); err != nil { // Parse []byte to the go struct pointer
+		fmt.Println(err)
+	}
+	waypoints := geojson.NewFeatureCollection()
+	for i := 0; i < len(resultRoutes.Data); i++ {
+
+		data := url.Values{
+			"RouteNo": {resultRoutes.Data[i].RouteNo},
+		}
+		time.Sleep(2 * time.Second)
+		fmt.Println("Restarting...")
+		fmt.Println(i)
+		respRouteNo, err := http.PostForm("http://tmtitsapi.locationtracker.com/api/getRouteDetailsNew", data) //GET request to TMTU for routes data
+		if err != nil {
+			log.Fatal("hi")
+		}
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				fmt.Println(err)
+			}
+		}(respRouteNo.Body)
+		bodyRouteNo, err := io.ReadAll(respRouteNo.Body) // response body is []byte
+		if err != nil {
+			fmt.Println("wrong here2")
+		}
+		var resultRouteNo ResponseRouteNo
+		if err := json.Unmarshal(bodyRouteNo, &resultRouteNo); err != nil { // Parse []byte to the go struct pointer
+			fmt.Println("wrong here3")
+		}
+		//fmt.Print(resultRouteNo)
+		routes := geojson.NewFeatureCollection()
+
+		for j := 0; j < len(resultRouteNo.Data[0].RouteDetails); j++ {
+
+			sWaypointNo, err := strconv.ParseInt(resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo, 10, 64)
+			if err != nil {
+				fmt.Println("wrong here15")
+			}
+			flag := 0
+			for k := 0; k < len(stops); k++ {
+
+				if int64(ref[k]) == sWaypointNo {
+					flag = 1
+				}
+			}
+			if flag == 0 {
+				ref = append(ref, int(sWaypointNo))
+			}
+
+			sresultRouteNoLatitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Latitude, 64)
+			if err != nil {
+				fmt.Println("wrong here16")
+			}
+			sresultRouteNoLongitude, err := strconv.ParseFloat(resultRouteNo.Data[0].RouteDetails[j].Waypoints.Longitude, 64)
+			if err != nil {
+				fmt.Println("wrong here1")
+			}
+			feature := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+			feature.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+			feature.SetProperty("ref", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WPointNo)
+			feature.SetProperty("position", j)
+			routes.AddFeature(feature)
+
+			for k := 0; k < len(ref); k++ {
+				if ref[k] == int(sWaypointNo) {
+					stops[int(sWaypointNo)] = resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName
+					feature1 := geojson.NewPointFeature([]float64{sresultRouteNoLongitude, sresultRouteNoLatitude})
+					feature1.SetProperty("name", resultRouteNo.Data[0].RouteDetails[j].Waypoints.WpointName)
+					feature1.SetProperty("ref", sWaypointNo)
+					feature1.SetProperty("highway", "bus_stop")
+					feature1.SetProperty("operator", "Thane Municipal Transport")
+					feature1.SetProperty("public_transport", "platform")
+					feature1.SetProperty("position", resultRouteNo.Data[0].RouteDetails[j].SequenceNo)
+					feature1.SetProperty("route_num", resultRouteNo.Data[0].RouteNum)
+					feature1.SetProperty("route_direction", resultRouteNo.Data[0].RouteDirection)
+					waypoints.AddFeature(feature1)
+				}
+			}
+		}
+
+		fn := fmt.Sprintf("output/TMTRoutes%s-%s.json", resultRoutes.Data[i].RouteNo, resultRoutes.Data[i].RouteNum)
+		err = os.WriteFile(fn, bodyRouteNo, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	rawJSON, err := waypoints.MarshalJSON()
+	if err != nil {
+		fmt.Printf("error: %v", err)
+		return
+	}
+
+	//Saves the geojson file for bus stops to the current directory
+	//fmt.Printf("%s", string(rawJSON))
+	err = os.WriteFile("output/TMTStopsThroughRoutes.json", rawJSON, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func buslocations() {
 
 	start := time.Now()
@@ -413,9 +633,7 @@ func buslocations() {
 	i := 1
 
 	uri := "mongodb://localhost:27017" //monogodb Connection String
-	if uri == "" {
-		log.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
-	}
+
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
 		panic(err)
@@ -426,13 +644,14 @@ func buslocations() {
 			fmt.Println(err)
 		}
 	}()
+	var previousBusLocations ResponseBusLocations // Declare the variable
 
 	for {
 		noOfAddedPositions := 1
 		fmt.Printf("Running: %d(s) times, time since start:%s", i, time.Since(start).String())
 		respBusLocations, err := http.Get("http://tmtitsapi.locationtracker.com/api/getLastTrackingData") //GET request to TMTU for BusLocations data
 		if err != nil {
-			log.Fatal(err)
+			log.Default()
 		}
 		defer func(Body io.ReadCloser) {
 			err := Body.Close()
@@ -453,11 +672,27 @@ func buslocations() {
 
 		json.Unmarshal(bodyBusLocations, &busLocations)
 
+		if previousBusLocations.Data == nil {
+			previousBusLocations = busLocations
+			fmt.Printf("First Run, %d items added\n", len(busLocations.Data))
+		}
+
+		for _, prevLocation := range previousBusLocations.Data {
+			for _, location := range busLocations.Data {
+				if prevLocation.VehID == location.VehID && prevLocation.LastTrackdt != location.LastTrackdt {
+					// Found an item with different 'LastTrackDt' field
+					fmt.Printf("Different LastTrackDt for VehID %s \n", location.VehID)
+				}
+			}
+		}
+
+
 		fmt.Print("\n")
 		for j := 0; j < len(busLocations.Data); j++ {
 			lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
 			lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
 			coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
+
 			var result bson.M
 			err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
 			if err != nil {
@@ -564,10 +799,13 @@ func buslocations() {
 					}
 
 					coll.InsertOne(context.TODO(), bus)
+					fmt.Printf("Added Bus Location data for %d  \n", bus.VehID)
 				}
 				noOfAddedPositions++
 			}
 		}
+
+		previousBusLocations = busLocations
 
 		respLimitRemaining := respBusLocations.Header.Get("X-RateLimit-Remaining")
 		respLimitRemainingint, err := strconv.ParseInt(respLimitRemaining, 10, 64)
