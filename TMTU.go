@@ -13,7 +13,7 @@ import (
 	"time"
 
 	geojson "github.com/paulmach/go.geojson"
-	"go.mongodb.org/mongo-driver/bson"
+	// "go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -674,29 +674,18 @@ func buslocations() {
 
 		if previousBusLocations.Data == nil {
 			previousBusLocations = busLocations
+			fmt.Print("\n")
 			fmt.Printf("First Run, %d items added\n", len(busLocations.Data))
 		}
 
 		for _, prevLocation := range previousBusLocations.Data {
-			for _, location := range busLocations.Data {
+			for j, location := range busLocations.Data {
 				if prevLocation.VehID == location.VehID && prevLocation.LastTrackdt != location.LastTrackdt {
 					// Found an item with different 'LastTrackDt' field
-					fmt.Printf("Different LastTrackDt for VehID %s \n", location.VehID)
-				}
-			}
-		}
+					coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
 
-
-		fmt.Print("\n")
-		for j := 0; j < len(busLocations.Data); j++ {
-			lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
-			lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
-			coll := client.Database("TMTU").Collection(busLocations.Data[j].VehID)
-
-			var result bson.M
-			err = coll.FindOne(context.TODO(), bson.D{{Key: "LastTrackdt", Value: lastTrackdtBson}}).Decode(&result)
-			if err != nil {
-				if err == mongo.ErrNoDocuments {
+					lastTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastTrackdt)
+					lastTrackdtBson := primitive.NewDateTimeFromTime(lastTrackdtTime)
 					prevTrackdtTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].PrevTrackDt)
 					prevTrackdtBson := primitive.NewDateTimeFromTime(prevTrackdtTime)
 					LastNCSentDateTime, _ := time.Parse("2006-01-02 15:04:05", busLocations.Data[j].LastNCSentDate)
@@ -799,11 +788,13 @@ func buslocations() {
 					}
 
 					coll.InsertOne(context.TODO(), bus)
-					fmt.Printf("Added Bus Location data for %d  \n", bus.VehID)
+					fmt.Print("\n")
+					
+					noOfAddedPositions++
 				}
-				noOfAddedPositions++
 			}
 		}
+
 
 		previousBusLocations = busLocations
 
